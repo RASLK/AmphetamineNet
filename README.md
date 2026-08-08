@@ -162,4 +162,3 @@ AmphetamineNet/
 ## License
 
 [MIT](./LICENSE) © Ruslan Khairulin
-0
