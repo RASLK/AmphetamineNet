@@ -1,0 +1,91 @@
+# AmphetamineNet — .NET 10 / Avalonia (macOS)
+
+# ----- Build -----
+[Bb]in/
+[Oo]bj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+[Oo]ut/
+artifacts/
+TestResults/
+[Pp]ublish/
+*.ilk
+*.obj
+*.iobj
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.pch
+*.rsp
+*.sbr
+*.tlb
+*.tmp
+*.tmp_proj
+*_wpftmp.csproj
+*.tlog
+*.log
+.builds
+*.pidb
+*.svclog
+*.scc
+
+# ----- .NET / NuGet -----
+project.lock.json
+project.fragment.lock.json
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# ----- Publish / installers -----
+*.dmg
+*.zip
+*.sha256sum
+
+# ----- Native build artifact (rebuilt at build time, see AmphetamineNet.csproj) -----
+Native/libcvdisplaylink_fix.dylib
+
+# ----- IDE -----
+.vs/
+.idea/
+*.user
+*.userosscache
+*.suo
+*.rsuser
+*.sln.docstates
+*.DotSettings.user
+*.sln.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+
+# ----- OS -----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ----- Rider / ReSharper / NCrunch -----
+_ReSharper*/
+*.[Rr]e[Ss]harper
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# ----- Coverage / benchmarks -----
+*.coverage
+*.coveragexml
+coverage*/
+BenchmarkDotNet.Artifacts/
+
+# ----- Runtime / debug -----
+/tmp/amphetamine-net*.log

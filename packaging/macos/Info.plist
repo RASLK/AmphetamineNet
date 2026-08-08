@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- VERSION and CFBundleVersion are substituted by create-app-dmg.sh -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>AmphetamineNet</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.raslk.amphetaminenet</string>
+    <key>CFBundleName</key>
+    <string>AmphetamineNet</string>
+    <key>CFBundleDisplayName</key>
+    <string>AmphetamineNet</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <!-- Agent app: lives in the menu bar only, with no Dock icon and no application menu. -->
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AmphetamineNet needs to run a one-time administrator prompt to install a passwordless helper for keeping the display awake with the lid closed.</string>
+</dict>
+</plist>

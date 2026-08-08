@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>AmphetamineNet</RootNamespace>
+    <AssemblyName>AmphetamineNet</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- macOS 26 CVDisplayLink fix for Avalonia RenderTimer -->
+  <ItemGroup Condition="Exists('Native/libcvdisplaylink_fix.dylib')">
+    <None Include="Native/libcvdisplaylink_fix.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          TargetPath="libcvdisplaylink_fix.dylib" />
+  </ItemGroup>
+
+  <Target Name="BuildCvDisplayLinkFix" BeforeTargets="BeforeBuild"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) And !Exists('Native/libcvdisplaylink_fix.dylib')">
+    <Exec Command="clang -dynamiclib -o Native/libcvdisplaylink_fix.dylib Native/cvdisplaylink_fix.c -framework CoreVideo -framework CoreGraphics -install_name @rpath/libcvdisplaylink_fix.dylib"
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+</Project>

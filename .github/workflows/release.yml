@@ -1,0 +1,93 @@
+# Tags a release build and publishes it as a GitHub Release.
+# Trigger: git tag vX.Y.Z && git push origin vX.Y.Z
+#
+# macOS only — AmphetamineNet uses IOKit/pmset APIs and does not run on other platforms.
+#
+# .sha256sum files: plaintext checksums so users can verify downloads were not corrupted
+#   or tampered with (shasum -a 256 -c AmphetamineNet-….sha256sum).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without leading v (used only for manual dispatch without a tag)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - id: ver
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            TAG="v${{ inputs.version }}"
+            TAG="${TAG#vv}"
+          else
+            echo "Need a tag push or workflow_dispatch version input" >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    uses: ./.github/workflows/macos-pack.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  release:
+    name: Create GitHub Release
+    needs: [version, macos]
+    runs-on: ubuntu-latest
+    # Only publish a Release when a real tag was pushed (not bare manual pack).
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -lh artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: AmphetamineNet ${{ needs.version.outputs.tag }}
+          draft: false
+          prerelease: ${{ contains(needs.version.outputs.tag, '-') }}
+          generate_release_notes: true
+          append_body: true
+          body: |
+            ## Downloads
+
+            | Platform | Installer |
+            | --- | --- |
+            | macOS Apple Silicon | `AmphetamineNet-*-macos-arm64.dmg` |
+            | macOS Intel | `AmphetamineNet-*-macos-intel.dmg` |
+
+            Each package has a matching **`.sha256sum`** — verify with:
+            `shasum -a 256 -c AmphetamineNet-….sha256sum`
+
+            **Unsigned build:** if Gatekeeper blocks the app, right-click → **Open**.
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

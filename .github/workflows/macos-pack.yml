@@ -1,0 +1,89 @@
+# Packaging (macOS) — DMG with .app + sha256sum.
+# Called from release.yml on tags; also runnable manually.
+
+name: Packaging (macOS)
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version without leading v (e.g. 1.0.0)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without leading v (e.g. 1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  PROJECT: AmphetamineNet.csproj
+
+jobs:
+  macos-pack:
+    name: ${{ matrix.asset_stem }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            asset_stem: macos-arm64
+          - rid: osx-x64
+            asset_stem: macos-intel
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          V="${{ inputs.version }}"
+          echo "version=${V#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build CVDisplayLink fix dylib
+        run: |
+          clang -dynamiclib -o Native/libcvdisplaylink_fix.dylib Native/cvdisplaylink_fix.c \
+            -framework CoreVideo -framework CoreGraphics \
+            -install_name @rpath/libcvdisplaylink_fix.dylib
+
+      - name: Publish
+        run: |
+          out="publish/${{ matrix.rid }}"
+          mkdir -p "$out" dist
+          dotnet publish "$PROJECT" -c Release -r "${{ matrix.rid }}" -o "$out" \
+            -p:Version="${{ steps.ver.outputs.version }}" \
+            -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false \
+            --verbosity minimal
+          chmod +x "$out/AmphetamineNet"
+
+      - name: Build DMG
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          STEM="${{ matrix.asset_stem }}"
+          OUT="publish/${{ matrix.rid }}"
+          BIN="$OUT/AmphetamineNet"
+          DMG="dist/AmphetamineNet-${VERSION}-${STEM}.dmg"
+          chmod +x packaging/macos/create-app-dmg.sh
+          packaging/macos/create-app-dmg.sh "$BIN" "$VERSION" "$DMG" \
+            Assets/tray.png "$OUT/libcvdisplaylink_fix.dylib"
+          (cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256sum")
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: AmphetamineNet-macos-${{ matrix.asset_stem }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
