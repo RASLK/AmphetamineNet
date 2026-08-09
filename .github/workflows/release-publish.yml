@@ -66,6 +66,12 @@ jobs:
 
             auto_updates true
             app "AmphetamineNet.app"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                              args: ["-cr", "#{appdir}/AmphetamineNet.app"],
+                              sudo: false
+            end
           end
           EOF
 
