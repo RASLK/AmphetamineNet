@@ -61,15 +61,48 @@ jobs:
         run: |
           out="publish/${{ matrix.rid }}"
           mkdir -p "$out" dist
+
+          # ДОБАВЛЕНЫ ФЛАГИ ДЛЯ SINGLE FILE
+          # EnableCompressionInSingleFile уменьшает размер бинарника и, как следствие,
+          # пиковое потребление места на runner'е при сборке DMG.
           dotnet publish "$PROJECT" -c Release -r "${{ matrix.rid }}" -o "$out" \
             -p:Version="${{ steps.ver.outputs.version }}" \
-            -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false \
+            -p:UseAppHost=true \
+            -p:PublishSingleFile=true \
+            -p:SelfContained=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=None -p:DebugSymbols=false \
             --verbosity minimal
+
           chmod +x "$out/AmphetamineNet"
+
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h /
+
+          # dotnet build/restore артефакты этого чекаута больше не нужны —
+          # опубликованный бинарник уже лежит в publish/.
+          rm -rf bin obj Native/*.o 2>/dev/null || true
+          rm -rf "$HOME/.nuget/packages" 2>/dev/null || true
+
+          # Симуляторы/дополнительные версии Xcode не нужны для сборки DMG,
+          # но занимают на runner'е десятки гигабайт.
+          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches 2>/dev/null || true
+          sudo rm -rf ~/Library/Developer/Xcode/DerivedData 2>/dev/null || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes 2>/dev/null || true
+          sudo rm -rf /Users/runner/Library/Android 2>/dev/null || true
+
+          echo "Disk space after cleanup:"
+          df -h /
 
       - name: Build DMG
         run: |
           set -euo pipefail
+          echo "Disk space before DMG build:"
+          df -h /
           VERSION="${{ steps.ver.outputs.version }}"
           STEM="${{ matrix.asset_stem }}"
           OUT="publish/${{ matrix.rid }}"
@@ -80,6 +113,8 @@ jobs:
             Assets/tray.png "$OUT/libcvdisplaylink_fix.dylib"
           (cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256sum")
           ls -lh dist/
+          echo "Disk space after DMG build:"
+          df -h /
 
       - uses: actions/upload-artifact@v5
         with:

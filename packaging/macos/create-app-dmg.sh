@@ -14,7 +14,10 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-APP_DIR="${STAGE}/AmphetamineNet.app"
+# .app is built directly inside the DMG staging root to avoid a second
+# full copy of the (potentially large, self-contained) bundle.
+DMG_ROOT="${STAGE}/dmgroot"
+APP_DIR="${DMG_ROOT}/AmphetamineNet.app"
 MACOS_DIR="${APP_DIR}/Contents/MacOS"
 RES_DIR="${APP_DIR}/Contents/Resources"
 mkdir -p "$MACOS_DIR" "$RES_DIR"
@@ -59,9 +62,6 @@ else
   /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "${APP_DIR}/Contents/Info.plist" 2>/dev/null || true
 fi
 
-DMG_ROOT="${STAGE}/dmgroot"
-mkdir -p "$DMG_ROOT"
-cp -R "$APP_DIR" "$DMG_ROOT/"
 ln -s /Applications "${DMG_ROOT}/Applications"
 
 mkdir -p "$(dirname "$OUT_DMG")"
