@@ -61,10 +61,17 @@ jobs:
         run: |
           out="publish/${{ matrix.rid }}"
           mkdir -p "$out" dist
+
+          # ДОБАВЛЕНЫ ФЛАГИ ДЛЯ SINGLE FILE
           dotnet publish "$PROJECT" -c Release -r "${{ matrix.rid }}" -o "$out" \
             -p:Version="${{ steps.ver.outputs.version }}" \
-            -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false \
+            -p:UseAppHost=true \
+            -p:PublishSingleFile=true \
+            -p:SelfContained=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:DebugType=None -p:DebugSymbols=false \
             --verbosity minimal
+
           chmod +x "$out/AmphetamineNet"
 
       - name: Build DMG
