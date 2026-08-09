@@ -1,0 +1,79 @@
+# Auto-release on push to the `release` branch.
+#
+# Usage: just merge/push into `release` — no manual `git tag` needed.
+#   git checkout release
+#   git merge main
+#   git push
+#
+# The workflow looks at the latest `vX.Y.Z` tag, bumps the patch number,
+# tags the commit, and runs the same build + publish pipeline as a manual
+# `git tag vX.Y.Z && git push --tags` would.
+#
+# To bump major/minor instead, tag manually first (e.g. `git tag v1.1.0 &&
+# git push --tags`) — the next branch push will then continue from v1.1.x.
+
+name: Release (auto-tag on branch push)
+
+on:
+  push:
+    branches:
+      - release
+
+concurrency:
+  group: release-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Compute next patch version and push tag
+        id: bump
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+          LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)"
+
+          if [[ -z "$LATEST" ]]; then
+            NEXT="v1.0.0"
+          else
+            V="${LATEST#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$V"
+            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "Latest tag: ${LATEST:-<none>} -> next tag: ${NEXT}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$NEXT"
+          git push origin "$NEXT"
+
+          echo "tag=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "version=${NEXT#v}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    uses: ./.github/workflows/macos-pack.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  release:
+    needs: [version, macos]
+    uses: ./.github/workflows/release-publish.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit
