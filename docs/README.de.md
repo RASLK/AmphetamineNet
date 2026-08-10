@@ -37,11 +37,14 @@ und hält den Mac optional auch bei geschlossenem Klapp-Deckel oder ausgeschalte
 ## Funktionen
 
 - Reine Menüleisten-App: kein Dock-Icon, kein Anwendungsmenü — alles läuft über das Tray-Symbol
-- Keep-awake-Sitzung über das Tray starten/stoppen, mit Dauerauswahl: **Unbegrenzt**, 5 / 15 / 30 Minuten, 1 / 2 / 5 Stunden
+- Tray-Menü: **Timer**, **Modifikatoren**, **Sprache**, danach **Sitzung starten/stoppen**
+- Keep-awake-Sitzung über das Tray starten/stoppen; eine Dauerauswahl startet die Sitzung sofort
+- Dauern: **Unbegrenzt**, 5 / 15 / 30 Minuten, 1 / 2 / 5 Stunden, plus eine gespeicherte eigene Zeit
+- Live-Countdown neben **Aktiv** bei zeitlich begrenzten Sitzungen
+- Dynamisches Pillen-Icon: schwarz im Ruhezustand, grün mit Timer, rot unbegrenzt; Modifikatoren ändern Füllung und Seitenbalken
 - **Geschlossenen Deckel erlauben** — hält den Mac bei geschlossenem Deckel voll wach, sowohl am Netzteil als auch im Akkubetrieb
 - **Display wach halten** — verhindert zusätzlich zum System-Schlaf auch das Einschlafen des Displays
-- Ein kleines Einstellungsfenster (über das Tray-Menü zu öffnen) spiegelt dieselben Steuerelemente auf größerer Fläche
-- Sitzungsstatus und Deckelzustand werden live sowohl im Tray-Menü als auch im Einstellungsfenster angezeigt
+- UI-Lokalisierung für gängige Sprachen (Auswahl im Tray)
 - Einstellungen bleiben über Neustarts hinweg erhalten (`~/Library/Application Support/AmphetamineNet/settings.json`)
 - Eingebaute Umgehung für den `Avalonia.Native`-Render-Timer-Absturz unter macOS 26 (`CVDisplayLinkCreateWithActiveCGDisplays`, Fehler `-6661`) über eine kleine Interpose-Dylib
 

@@ -37,11 +37,14 @@ optionally keep the Mac awake even with the lid closed or the display asleep.
 ## Features
 
 - Menu bar–only app: no Dock icon, no application menu — everything lives in the tray icon
-- Start / stop a keep-awake session from the tray, with a duration picker: **Indefinitely**, 5 / 15 / 30 minutes, 1 / 2 / 5 hours
+- Tray menu groups: **Timer**, **Modifiers**, **Language**, then **Start/Stop Session**
+- Start / stop a keep-awake session from the tray; picking a timer duration starts the session
+- Built-in durations: **Indefinitely**, 5 / 15 / 30 minutes, 1 / 2 / 5 hours, plus a remembered custom duration
+- Live countdown next to **Active** while a timed session is running
+- Dynamic pill tray icon: black when idle, green for timed sessions, red for indefinite; closed-lid and display modifiers change the fill and side bars
 - **Allow closed lid** — keeps the Mac fully awake with the lid closed, on both AC and battery power
 - **Keep display awake** — in addition to preventing system sleep, also prevents the display from sleeping
-- A small settings window (opened via the tray menu) mirrors the same controls for a larger surface
-- Session state and lid status are reflected live in both the tray menu and the settings window
+- UI localization for major languages (selectable from the tray)
 - Settings persist across launches (`~/Library/Application Support/AmphetamineNet/settings.json`)
 - Built-in workaround for the macOS 26 `Avalonia.Native` render-timer crash (`CVDisplayLinkCreateWithActiveCGDisplays`, error `-6661`) via a small interpose dylib
 
@@ -146,9 +149,10 @@ git push origin v1.0.0
 AmphetamineNet/
   App.axaml(.cs)          # Avalonia lifecycle, tray icon + menu, window activation policy
   Program.cs               # entry point, macOS 26 CVDisplayLink relaunch workaround
-  Models/                  # data models
   Services/
     AppSettings.cs          # JSON-persisted user settings
+    Localization.cs         # tray UI strings for major languages
+    TrayIconPainter.cs      # dynamic pill tray icon (SkiaSharp)
     MacKeepAwakeService.cs  # IOPM assertions, clamshell state, pmset orchestration
     PowerProtect.cs          # one-time passwordless sudoers installation for pmset
   Native/
@@ -156,7 +160,7 @@ AmphetamineNet/
     MacAppActivation.cs      # Accessory ↔ Regular NSApplication activation policy switching
     cvdisplaylink_fix.c       # interpose dylib source for the macOS 26 render-timer crash
   ViewModels/               # MVVM view models (CommunityToolkit.Mvvm)
-  Views/                    # Avalonia windows
+  Views/                    # custom duration prompt
 ```
 
 ## License

@@ -38,11 +38,14 @@ indéfiniment, et peut en option empêcher le Mac de s'endormir même capot ferm
 ## Fonctionnalités
 
 - Application uniquement dans la barre de menus : pas d'icône dans le Dock, pas de menu d'application — tout se passe dans l'icône de la barre système
-- Démarrer / arrêter une session « garder éveillé » depuis la barre système, avec un sélecteur de durée : **Indéfiniment**, 5 / 15 / 30 minutes, 1 / 2 / 5 heures
+- Menu : **Minuteur**, **Modificateurs**, **Langue**, puis **Démarrer/Arrêter la session**
+- Démarrer / arrêter une session depuis la barre système ; choisir une durée démarre la session
+- Durées : **Indéfiniment**, 5 / 15 / 30 minutes, 1 / 2 / 5 heures, plus une durée personnalisée mémorisée
+- Compte à rebours en direct à côté de **Actif** pour les sessions minutées
+- Icône pilule dynamique : noire au repos, verte avec minuteur, rouge sans limite ; les modificateurs changent le remplissage et les barres
 - **Autoriser le capot fermé** — garde le Mac totalement éveillé capot fermé, sur secteur comme sur batterie
 - **Garder l'écran allumé** — en plus d'empêcher la veille système, empêche aussi l'écran de s'éteindre
-- Une petite fenêtre de réglages (ouverte depuis le menu de la barre système) reprend les mêmes contrôles sur une surface plus grande
-- L'état de la session et le statut du capot sont reflétés en direct dans le menu de la barre système comme dans la fenêtre de réglages
+- Localisation de l'interface pour les langues principales (choix dans la barre système)
 - Les réglages sont conservés d'un lancement à l'autre (`~/Library/Application Support/AmphetamineNet/settings.json`)
 - Contournement intégré pour le plantage du timer de rendu `Avalonia.Native` sous macOS 26 (`CVDisplayLinkCreateWithActiveCGDisplays`, erreur `-6661`) via une petite dylib d'interposition
 

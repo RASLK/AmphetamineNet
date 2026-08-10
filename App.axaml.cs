@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using AmphetamineNet.Native;
 using AmphetamineNet.Services;
@@ -13,25 +12,107 @@ using AmphetamineNet.Views;
 
 namespace AmphetamineNet;
 
+/// <summary>
+/// Avalonia application that owns the tray icon and menu
+/// </summary>
 public partial class App : Application
 {
+    /// <summary>
+    /// macOS keep-awake service
+    /// </summary>
     private MacKeepAwakeService? _keepAwake;
+
+    /// <summary>
+    /// Main session view model
+    /// </summary>
     private MainViewModel? _mainViewModel;
+
+    /// <summary>
+    /// Tray menu view model
+    /// </summary>
     private TrayViewModel? _trayViewModel;
-    private MainWindow? _mainWindow;
+
+    /// <summary>
+    /// Classic desktop application lifetime
+    /// </summary>
     private IClassicDesktopStyleApplicationLifetime? _desktop;
+
+    /// <summary>
+    /// Menu-bar tray icon
+    /// </summary>
     private TrayIcon? _trayIcon;
+
+    /// <summary>
+    /// Tray menu status header item
+    /// </summary>
     private NativeMenuItem? _statusItem;
+
+    /// <summary>
+    /// Start or stop session menu item
+    /// </summary>
     private NativeMenuItem? _toggleItem;
+
+    /// <summary>
+    /// Timer submenu root item
+    /// </summary>
+    private NativeMenuItem? _timerRoot;
+
+    /// <summary>
+    /// Modifiers submenu root item
+    /// </summary>
+    private NativeMenuItem? _modifiersRoot;
+
+    /// <summary>
+    /// Language submenu root item
+    /// </summary>
+    private NativeMenuItem? _languageRoot;
+
+    /// <summary>
+    /// Closed-lid modifier menu item
+    /// </summary>
     private NativeMenuItem? _closedLidItem;
+
+    /// <summary>
+    /// Display-awake modifier menu item
+    /// </summary>
     private NativeMenuItem? _displayItem;
+
+    /// <summary>
+    /// Custom duration menu item
+    /// </summary>
+    private NativeMenuItem? _customDurationItem;
+
+    /// <summary>
+    /// Quit application menu item
+    /// </summary>
+    private NativeMenuItem? _quitItem;
+
+    /// <summary>
+    /// Duration menu items keyed by minutes
+    /// </summary>
     private readonly Dictionary<int, NativeMenuItem> _durationItems = new();
 
+    /// <summary>
+    /// Language menu items keyed by code
+    /// </summary>
+    private readonly Dictionary<string, NativeMenuItem> _languageItems = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Cache key for the current tray icon state
+    /// </summary>
+    private string _lastIconKey = "";
+
+    /// <summary>
+    /// Loads Avalonia XAML resources
+    /// </summary>
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
     }
 
+    /// <summary>
+    /// Creates services and the tray UI on startup
+    /// </summary>
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -47,7 +128,7 @@ public partial class App : Application
                     Height = 160,
                     Content = new TextBlock
                     {
-                        Text = "This app only works on macOS.",
+                        Text = Localization.T("os.unsupported"),
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                         VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                         Margin = new Thickness(24),
@@ -64,6 +145,7 @@ public partial class App : Application
 
                 var settings = AppSettings.Load();
                 settings.LaunchMinimized = true;
+                Localization.SetLanguage(settings.Language);
 
                 _keepAwake = new MacKeepAwakeService();
                 _keepAwake.PrepareForAdminPrompt = PrepareAdminUi;
@@ -72,12 +154,12 @@ public partial class App : Application
                 _trayViewModel = new TrayViewModel(this, _mainViewModel);
                 DataContext = _trayViewModel;
 
-                // Important: the TrayIcon from XAML is created before DataContext — its bindings are dead.
-                // We build the tray manually after the VM is ready.
                 SetupTrayIcon(_trayViewModel);
 
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 desktop.Exit += (_, _) => Cleanup();
+
+                Localization.LanguageChanged += OnLanguageChanged;
 
                 NotifyStarted();
                 AppLog.Write("tray ready");
@@ -92,6 +174,33 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    /// <summary>
+    /// Applies UI language changes
+    /// </summary>
+    /// <param name="sender">Event source</param>
+    /// <param name="e">Event data</param>
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        UiDispatch.Post(() =>
+        {
+            if (_trayViewModel is null)
+                return;
+            try
+            {
+                RelocalizeTrayMenu(_trayViewModel);
+                UpdateTrayIcon(_trayViewModel);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Write($"language menu update error: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Creates the tray icon and wires refresh handlers
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
     private void SetupTrayIcon(TrayViewModel trayVm)
     {
         TrayIcon.SetIcons(this, null);
@@ -100,8 +209,8 @@ public partial class App : Application
         {
             ToolTipText = trayVm.TrayToolTip,
             IsVisible = true,
-            Icon = LoadTrayIcon(),
         };
+        UpdateTrayIcon(trayVm);
 
         BuildTrayMenu(trayVm);
         RefreshTrayMenu(trayVm);
@@ -116,6 +225,7 @@ public partial class App : Application
             {
                 _trayIcon.ToolTipText = _trayViewModel.TrayToolTip;
                 RefreshTrayMenu(_trayViewModel);
+                UpdateTrayIcon(_trayViewModel);
             }
             catch (Exception ex)
             {
@@ -134,101 +244,242 @@ public partial class App : Application
         TrayIcon.SetIcons(this, [_trayIcon]);
     }
 
+    /// <summary>
+    /// Builds the full tray native menu
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
     private void BuildTrayMenu(TrayViewModel trayVm)
     {
         if (_trayIcon is null)
             return;
 
+        // Replacing TrayIcon.Menu after the first assign crashes Avalonia.Native on macOS.
+        if (_trayIcon.Menu is not null)
+        {
+            RelocalizeTrayMenu(trayVm);
+            return;
+        }
+
         var menu = new NativeMenu();
         _durationItems.Clear();
+        _languageItems.Clear();
 
         _statusItem = new NativeMenuItem(trayVm.SessionHeader) { IsEnabled = false };
         menu.Items.Add(_statusItem);
         menu.Items.Add(new NativeMenuItemSeparator());
+
+        _timerRoot = new NativeMenuItem(Localization.T("menu.timer"))
+        {
+            Menu = new NativeMenu(),
+        };
+        menu.Items.Add(_timerRoot);
+
+        _modifiersRoot = new NativeMenuItem(Localization.T("menu.modifiers"))
+        {
+            Menu = new NativeMenu(),
+        };
+        menu.Items.Add(_modifiersRoot);
+
+        _languageRoot = new NativeMenuItem(Localization.T("menu.language"))
+        {
+            Menu = new NativeMenu(),
+        };
+        menu.Items.Add(_languageRoot);
+
+        menu.Items.Add(new NativeMenuItemSeparator());
+
+        _quitItem = new NativeMenuItem(Localization.T("menu.quit"))
+        {
+            Command = trayVm.ExitCommand,
+        };
+        menu.Items.Add(_quitItem);
 
         _toggleItem = new NativeMenuItem(trayVm.ToggleSessionHeader)
         {
             Command = trayVm.ToggleSessionCommand,
         };
         menu.Items.Add(_toggleItem);
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        AddDuration(menu, trayVm, "Indefinitely", 0);
-        AddDuration(menu, trayVm, "5 minutes", 5);
-        AddDuration(menu, trayVm, "15 minutes", 15);
-        AddDuration(menu, trayVm, "30 minutes", 30);
-        AddDuration(menu, trayVm, "1 hour", 60);
-        AddDuration(menu, trayVm, "2 hours", 120);
-        AddDuration(menu, trayVm, "5 hours", 300);
-
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        _closedLidItem = new NativeMenuItem("Allow closed lid")
-        {
-            ToggleType = MenuItemToggleType.CheckBox,
-            IsChecked = trayVm.AllowClosedLid,
-            Command = trayVm.ToggleClosedLidCommand,
-        };
-        menu.Items.Add(_closedLidItem);
-
-        _displayItem = new NativeMenuItem("Keep display awake")
-        {
-            ToggleType = MenuItemToggleType.CheckBox,
-            IsChecked = trayVm.PreventDisplaySleep,
-            Command = trayVm.ToggleDisplaySleepCommand,
-        };
-        menu.Items.Add(_displayItem);
-
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        menu.Items.Add(new NativeMenuItem("Preferences…") { Command = trayVm.ShowPreferencesCommand });
-        menu.Items.Add(new NativeMenuItem("Quit") { Command = trayVm.ExitCommand });
 
         _trayIcon.Menu = menu;
+        RelocalizeTrayMenu(trayVm);
     }
 
+    /// <summary>
+    /// Rebuilds submenu contents and headers without replacing TrayIcon.Menu
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
+    private void RelocalizeTrayMenu(TrayViewModel trayVm)
+    {
+        // Prefer in-place header/icon updates. Replacing TrayIcon.Menu crashes Avalonia.Native.
+        if (_timerRoot?.Menu is { } timerMenu && (_durationItems.Count == 0 || NeedsTimerRebuild(trayVm)))
+            FillTimerMenu(timerMenu, trayVm);
+
+        if (_modifiersRoot?.Menu is { } modifiersMenu && _closedLidItem is null)
+            FillModifiersMenu(modifiersMenu, trayVm);
+
+        if (_languageRoot?.Menu is { } languageMenu && _languageItems.Count == 0)
+            FillLanguageMenu(languageMenu, trayVm);
+
+        RefreshTrayMenu(trayVm);
+    }
+
+    /// <summary>
+    /// Fills the Timer submenu
+    /// </summary>
+    /// <param name="submenu">Target submenu</param>
+    /// <param name="trayVm">Tray view model</param>
+    private void FillTimerMenu(NativeMenu submenu, TrayViewModel trayVm)
+    {
+        submenu.Items.Clear();
+        _durationItems.Clear();
+
+        foreach (var minutes in MainViewModel.PresetDurations)
+            AddDuration(submenu, trayVm, minutes);
+
+        if (trayVm.CustomDurationMinutes is { } custom &&
+            custom > 0 &&
+            !MainViewModel.PresetDurations.Contains(custom))
+        {
+            AddDuration(submenu, trayVm, custom);
+        }
+
+        submenu.Items.Add(new NativeMenuItemSeparator());
+
+        _customDurationItem = new NativeMenuItem(Localization.T("menu.custom_time"))
+        {
+            Command = trayVm.PromptCustomDurationCommand,
+        };
+        submenu.Items.Add(_customDurationItem);
+    }
+
+    /// <summary>
+    /// Fills the Modifiers submenu
+    /// </summary>
+    /// <param name="submenu">Target submenu</param>
+    /// <param name="trayVm">Tray view model</param>
+    private void FillModifiersMenu(NativeMenu submenu, TrayViewModel trayVm)
+    {
+        submenu.Items.Clear();
+
+        _closedLidItem = new NativeMenuItem(Localization.T("mod.closed_lid"))
+        {
+            Icon = SelectionIcon(trayVm.AllowClosedLid),
+            Command = trayVm.ToggleClosedLidCommand,
+        };
+        submenu.Items.Add(_closedLidItem);
+
+        _displayItem = new NativeMenuItem(Localization.T("mod.display"))
+        {
+            Icon = SelectionIcon(trayVm.PreventDisplaySleep),
+            Command = trayVm.ToggleDisplaySleepCommand,
+        };
+        submenu.Items.Add(_displayItem);
+    }
+
+    /// <summary>
+    /// Fills the Language submenu
+    /// </summary>
+    /// <param name="submenu">Target submenu</param>
+    /// <param name="trayVm">Tray view model</param>
+    private void FillLanguageMenu(NativeMenu submenu, TrayViewModel trayVm)
+    {
+        submenu.Items.Clear();
+        _languageItems.Clear();
+
+        var current = Localization.CurrentLanguage;
+        foreach (var lang in Localization.Languages)
+        {
+            var selected = current.Equals(lang.Code, StringComparison.OrdinalIgnoreCase);
+            var item = new NativeMenuItem(lang.NativeName)
+            {
+                Icon = SelectionIcon(selected),
+                Command = trayVm.SelectLanguageCommand,
+                CommandParameter = lang.Code,
+            };
+            _languageItems[lang.Code] = item;
+            submenu.Items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Updates tray menu headers, icons, and checks
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
     private void RefreshTrayMenu(TrayViewModel trayVm)
     {
         if (_statusItem is not null)
             _statusItem.Header = trayVm.SessionHeader;
         if (_toggleItem is not null)
             _toggleItem.Header = trayVm.ToggleSessionHeader;
+        if (_timerRoot is not null)
+            _timerRoot.Header = Localization.T("menu.timer");
+        if (_modifiersRoot is not null)
+            _modifiersRoot.Header = Localization.T("menu.modifiers");
+        if (_languageRoot is not null)
+            _languageRoot.Header = Localization.T("menu.language");
+        if (_customDurationItem is not null)
+            _customDurationItem.Header = Localization.T("menu.custom_time");
+        if (_quitItem is not null)
+            _quitItem.Header = Localization.T("menu.quit");
+
+        // Rebuild timer items in-place when the remembered custom duration changes.
+        if (_timerRoot?.Menu is { } timerMenu && NeedsTimerRebuild(trayVm))
+            FillTimerMenu(timerMenu, trayVm);
 
         foreach (var (minutes, item) in _durationItems)
         {
-            item.IsChecked = minutes switch
-            {
-                0 => trayVm.IsIndefinite,
-                5 => trayVm.Is5Min,
-                15 => trayVm.Is15Min,
-                30 => trayVm.Is30Min,
-                60 => trayVm.Is1Hour,
-                120 => trayVm.Is2Hours,
-                300 => trayVm.Is5Hours,
-                _ => false,
-            };
+            item.Header = Localization.FormatDuration(minutes);
+            item.Icon = SelectionIcon(trayVm.IsDurationSelected(minutes));
         }
 
         if (_closedLidItem is not null)
         {
-            _closedLidItem.Header = "Allow closed lid";
-            _closedLidItem.IsChecked = trayVm.AllowClosedLid;
+            _closedLidItem.Header = Localization.T("mod.closed_lid");
+            _closedLidItem.Icon = SelectionIcon(trayVm.AllowClosedLid);
         }
 
         if (_displayItem is not null)
         {
-            _displayItem.Header = "Keep display awake";
-            _displayItem.IsChecked = trayVm.PreventDisplaySleep;
+            _displayItem.Header = Localization.T("mod.display");
+            _displayItem.Icon = SelectionIcon(trayVm.PreventDisplaySleep);
         }
 
+        var currentLanguage = Localization.CurrentLanguage;
+        foreach (var (code, item) in _languageItems)
+            item.Icon = SelectionIcon(currentLanguage.Equals(code, StringComparison.OrdinalIgnoreCase));
     }
 
-    private void AddDuration(NativeMenu menu, TrayViewModel trayVm, string title, int minutes)
+    /// <summary>
+    /// Detects whether the Timer submenu must be rebuilt
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
+    /// <returns>True when the timer submenu is stale</returns>
+    private bool NeedsTimerRebuild(TrayViewModel trayVm)
     {
-        var item = new NativeMenuItem(title)
+        var custom = trayVm.CustomDurationMinutes;
+        if (custom is { } c && c > 0 && !MainViewModel.PresetDurations.Contains(c))
+            return !_durationItems.ContainsKey(c);
+
+        foreach (var key in _durationItems.Keys)
         {
-            ToggleType = MenuItemToggleType.Radio,
-            IsChecked = false,
+            if (!MainViewModel.PresetDurations.Contains(key))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Adds a duration item to a native menu
+    /// </summary>
+    /// <param name="menu">Target native menu</param>
+    /// <param name="trayVm">Tray view model</param>
+    /// <param name="minutes">Duration in minutes</param>
+    private void AddDuration(NativeMenu menu, TrayViewModel trayVm, int minutes)
+    {
+        var item = new NativeMenuItem(Localization.FormatDuration(minutes))
+        {
+            Icon = SelectionIcon(trayVm.IsDurationSelected(minutes)),
             Command = trayVm.SelectDurationCommand,
             CommandParameter = minutes.ToString(),
         };
@@ -236,38 +487,93 @@ public partial class App : Application
         menu.Items.Add(item);
     }
 
+    /// <summary>
+    /// Returns the selection indicator for a menu item
+    /// </summary>
+    /// <param name="selected">Whether the item is selected</param>
+    /// <returns>Selection bitmap, or null</returns>
+    private Bitmap? SelectionIcon(bool selected) =>
+        // Fresh instances avoid macOS native-menu icon sharing glitches.
+        TrayIconPainter.CreateSelectionDot(selected);
+
+    /// <summary>
+    /// Rebuilds the tray icon when session state changes
+    /// </summary>
+    /// <param name="trayVm">Tray view model</param>
+    private void UpdateTrayIcon(TrayViewModel trayVm)
+    {
+        if (_trayIcon is null)
+            return;
+
+        var active = trayVm.Main.IsSessionActive;
+        var timed = trayVm.Main.IsTimedSession;
+        var lid = trayVm.AllowClosedLid;
+        var display = trayVm.PreventDisplaySleep;
+        var key = $"{active}:{timed}:{lid}:{display}";
+        if (key == _lastIconKey && _trayIcon.Icon is not null)
+            return;
+
+        _lastIconKey = key;
+        _trayIcon.Icon = TrayIconPainter.CreateTrayIcon(active, timed, lid, display);
+    }
+
+    /// <summary>
+    /// Activates the app for an admin password prompt
+    /// </summary>
     public void PrepareAdminUi()
     {
         UiDispatch.Invoke(MacAppActivation.ActivateForAdminPrompt);
     }
 
+    /// <summary>
+    /// Returns the app to accessory mode after an admin prompt
+    /// </summary>
     public void FinishAdminUi()
     {
-        UiDispatch.Post(() =>
-        {
-            if (_mainWindow is { IsVisible: true })
-                return;
-
-            MacAppActivation.ReturnToAccessory();
-        });
+        UiDispatch.Post(MacAppActivation.ReturnToAccessory);
     }
 
-    private static WindowIcon LoadTrayIcon()
+    /// <summary>
+    /// Opens the custom duration prompt
+    /// </summary>
+    public async void PromptCustomDuration()
     {
+        if (_mainViewModel is null || _desktop is null)
+            return;
+
         try
         {
-            var uri = new Uri("avares://AmphetamineNet/Assets/tray.png");
-            using var stream = AssetLoader.Open(uri);
-            return new WindowIcon(stream);
+            MacAppActivation.ActivateForAdminPrompt();
+
+            var dialog = new CustomDurationWindow(_mainViewModel.CustomDurationMinutes);
+            var closed = new TaskCompletionSource();
+            dialog.Closed += (_, _) => closed.TrySetResult();
+            dialog.Show();
+            await closed.Task;
+
+            if (dialog.ResultMinutes is { } minutes)
+            {
+                _mainViewModel.SetCustomDurationAndStart(minutes);
+                if (_trayViewModel is not null)
+                {
+                    RelocalizeTrayMenu(_trayViewModel);
+                    UpdateTrayIcon(_trayViewModel);
+                }
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            var uri = new Uri("avares://AmphetamineNet/Assets/avalonia-logo.ico");
-            using var stream = AssetLoader.Open(uri);
-            return new WindowIcon(stream);
+            AppLog.Write($"custom duration prompt error: {ex.Message}");
+        }
+        finally
+        {
+            MacAppActivation.ReturnToAccessory();
         }
     }
 
+    /// <summary>
+    /// Shows a one-shot launch notification
+    /// </summary>
     private static void NotifyStarted()
     {
         try
@@ -278,7 +584,7 @@ public partial class App : Application
                 ArgumentList =
                 {
                     "-e",
-                    "display notification \"The menu bar icon is at the top right. Start a session from there.\" with title \"AmphetamineNet\"",
+                    $"display notification \"{EscapeAppleScript(Localization.T("notify.body"))}\" with title \"AmphetamineNet\"",
                 },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -293,36 +599,30 @@ public partial class App : Application
         }
     }
 
-    public void ShowMainWindow()
-    {
-        if (_mainViewModel is null || _desktop is null)
-            return;
+    /// <summary>
+    /// Escapes text for an AppleScript string literal
+    /// </summary>
+    /// <param name="text">Raw text</param>
+    /// <returns>Escaped AppleScript text</returns>
+    private static string EscapeAppleScript(string text) =>
+        text.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-        MacAppActivation.ActivateForAdminPrompt();
-
-        if (_mainWindow is null)
-        {
-            _mainWindow = new MainWindow
-            {
-                DataContext = _mainViewModel,
-            };
-            _desktop.MainWindow = _mainWindow;
-        }
-
-        _mainWindow.Show();
-        _mainWindow.Activate();
-        _mainWindow.WindowState = WindowState.Normal;
-    }
-
+    /// <summary>
+    /// Cleans up and shuts down the application
+    /// </summary>
     public void ExitApplication()
     {
-        _mainWindow?.AllowClose();
         Cleanup();
         _desktop?.Shutdown();
     }
 
+    /// <summary>
+    /// Disposes tray, view models, and keep-awake resources
+    /// </summary>
     private void Cleanup()
     {
+        Localization.LanguageChanged -= OnLanguageChanged;
+
         if (_trayIcon is not null)
         {
             _trayIcon.IsVisible = false;
@@ -336,6 +636,5 @@ public partial class App : Application
         _trayViewModel = null;
         _keepAwake?.Dispose();
         _keepAwake = null;
-        _mainWindow = null;
     }
 }

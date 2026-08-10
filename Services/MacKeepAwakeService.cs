@@ -5,47 +5,159 @@ using static AmphetamineNet.Native.IoKitNative;
 namespace AmphetamineNet.Services;
 
 /// <summary>
-/// Keeps the Mac awake: IOPM assertions + IOKit clamshell + pmset disablesleep (verified against ioreg).
+/// Keeps the Mac awake via IOPM assertions and pmset
 /// </summary>
 public sealed class MacKeepAwakeService : IDisposable
 {
+    /// <summary>
+    /// Synchronization lock for service state
+    /// </summary>
     private readonly object _gate = new();
+
+    /// <summary>
+    /// Active IOPM assertion identifiers
+    /// </summary>
     private readonly List<uint> _assertionIds = [];
+
+    /// <summary>
+    /// IOKit service handle for IOPMrootDomain
+    /// </summary>
     private uint _rootDomainService;
+
+    /// <summary>
+    /// IOKit connection to IOPMrootDomain
+    /// </summary>
     private uint _rootDomainConnection;
+
+    /// <summary>
+    /// Timer that re-applies clamshell protection
+    /// </summary>
     private Timer? _heartbeat;
+
+    /// <summary>
+    /// Timer that stops a timed session
+    /// </summary>
     private Timer? _sessionTimer;
+
+    /// <summary>
+    /// Whether a keep-awake session is active
+    /// </summary>
     private bool _active;
+
+    /// <summary>
+    /// Whether closed-lid keep-awake is requested
+    /// </summary>
     private bool _allowClosedLid = true;
+
+    /// <summary>
+    /// Whether display sleep prevention is requested
+    /// </summary>
     private bool _preventDisplaySleep;
+
+    /// <summary>
+    /// Whether pmset disablesleep is currently held
+    /// </summary>
     private bool _pmsetDisableSleepHeld;
+
+    /// <summary>
+    /// Whether the object has been disposed
+    /// </summary>
     private bool _disposed;
 
-    // CFString keys cached for the lifetime of the process (never CFRelease'd).
+    /// <summary>
+    /// UTC end time of a timed session
+    /// </summary>
+    private DateTimeOffset? _sessionEndsAt;
+
+    /// <summary>
+    /// CFString key for AppleClamshellState
+    /// </summary>
     private static readonly IntPtr KeyAppleClamshellState =
         CFStringCreateWithCString(IntPtr.Zero, "AppleClamshellState", kCFStringEncodingUTF8);
+
+    /// <summary>
+    /// CFString key for SleepDisabled
+    /// </summary>
     private static readonly IntPtr KeySleepDisabled =
         CFStringCreateWithCString(IntPtr.Zero, "SleepDisabled", kCFStringEncodingUTF8);
 
+    /// <summary>
+    /// Whether a keep-awake session is running
+    /// </summary>
+    /// <value>True when assertions are held</value>
     public bool IsActive
     {
         get { lock (_gate) return _active; }
     }
 
+    /// <summary>
+    /// Whether pmset SleepDisabled is held
+    /// </summary>
+    /// <value>True when Power Protect is active</value>
     public bool IsPowerProtectActive
     {
         get { lock (_gate) return _pmsetDisableSleepHeld; }
     }
 
+    /// <summary>
+    /// UTC end time of the timed session
+    /// </summary>
+    /// <value>End timestamp, or null when inactive or indefinite</value>
+    public DateTimeOffset? SessionEndsAt
+    {
+        get { lock (_gate) return _sessionEndsAt; }
+    }
+
+    /// <summary>
+    /// Time left in the timed session
+    /// </summary>
+    /// <value>Remaining duration, or null when inactive or indefinite</value>
+    public TimeSpan? RemainingTime
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_sessionEndsAt is not { } ends)
+                    return null;
+                var left = ends - DateTimeOffset.UtcNow;
+                return left < TimeSpan.Zero ? TimeSpan.Zero : left;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Last non-fatal warning message
+    /// </summary>
+    /// <value>Warning text, or null when none</value>
     public string? LastWarning { get; private set; }
 
+    /// <summary>
+    /// Whether the current OS supports keep-awake
+    /// </summary>
+    /// <value>True on macOS</value>
     public bool IsSupported => RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
+    /// <summary>
+    /// Callback invoked before an admin password prompt
+    /// </summary>
+    /// <value>UI preparation action</value>
     public Action? PrepareForAdminPrompt { get; set; }
+
+    /// <summary>
+    /// Callback invoked after an admin password prompt
+    /// </summary>
+    /// <value>UI cleanup action</value>
     public Action? FinishAdminPrompt { get; set; }
 
+    /// <summary>
+    /// Raised when session activity changes
+    /// </summary>
     public event EventHandler? StateChanged;
 
+    /// <summary>
+    /// Installs the passwordless pmset sudoers helper if needed
+    /// </summary>
     public void EnsurePowerProtectInstalled()
     {
         if (!IsSupported)
@@ -66,6 +178,12 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts a keep-awake session
+    /// </summary>
+    /// <param name="allowClosedLid">Enable closed-lid keep-awake</param>
+    /// <param name="preventDisplaySleep">Prevent display sleep</param>
+    /// <param name="duration">Optional session duration</param>
     public void Start(bool allowClosedLid, bool preventDisplaySleep, TimeSpan? duration)
     {
         if (!IsSupported)
@@ -167,6 +285,7 @@ public sealed class MacKeepAwakeService : IDisposable
 
             if (duration is { } d && d > TimeSpan.Zero)
             {
+                _sessionEndsAt = DateTimeOffset.UtcNow + d;
                 _sessionTimer = new Timer(
                     _ =>
                     {
@@ -177,6 +296,10 @@ public sealed class MacKeepAwakeService : IDisposable
                     d,
                     Timeout.InfiniteTimeSpan);
             }
+            else
+            {
+                _sessionEndsAt = null;
+            }
 
             _active = true;
         }
@@ -184,6 +307,9 @@ public sealed class MacKeepAwakeService : IDisposable
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Stops the keep-awake session
+    /// </summary>
     public void Stop()
     {
         lock (_gate)
@@ -196,6 +322,10 @@ public sealed class MacKeepAwakeService : IDisposable
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Reads whether the lid is currently closed
+    /// </summary>
+    /// <returns>True when closed, false when open, or null when unknown</returns>
     public bool? IsLidClosed()
     {
         if (!IsSupported)
@@ -211,8 +341,15 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads SleepDisabled from IORegistry
+    /// </summary>
+    /// <returns>True when system sleep is disabled</returns>
     public bool IsSystemSleepDisabled() => ReadSleepDisabledFromIoreg();
 
+    /// <summary>
+    /// Stops the session and releases native resources
+    /// </summary>
     public void Dispose()
     {
         lock (_gate)
@@ -224,10 +361,15 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Releases assertions and restores sleep settings
+    /// </summary>
+    /// <param name="releaseClamshellConnection">Whether to close the IOKit connection</param>
     private void StopCore(bool releaseClamshellConnection)
     {
         _sessionTimer?.Dispose();
         _sessionTimer = null;
+        _sessionEndsAt = null;
         _heartbeat?.Dispose();
         _heartbeat = null;
 
@@ -259,6 +401,9 @@ public sealed class MacKeepAwakeService : IDisposable
         _active = false;
     }
 
+    /// <summary>
+    /// Creates IOPM assertions for the current options
+    /// </summary>
     private void CreateAssertions()
     {
         ReleaseAssertions();
@@ -268,6 +413,11 @@ public sealed class MacKeepAwakeService : IDisposable
             CreateAssertion(PreventUserIdleDisplaySleep, "AmphetamineNet display");
     }
 
+    /// <summary>
+    /// Creates a single IOPM assertion
+    /// </summary>
+    /// <param name="type">IOPM assertion type</param>
+    /// <param name="name">Assertion display name</param>
     private void CreateAssertion(string type, string name)
     {
         var typeRef = CFStringCreateWithCString(IntPtr.Zero, type, kCFStringEncodingUTF8);
@@ -293,6 +443,9 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Releases all held IOPM assertions
+    /// </summary>
     private void ReleaseAssertions()
     {
         foreach (var id in _assertionIds)
@@ -300,6 +453,9 @@ public sealed class MacKeepAwakeService : IDisposable
         _assertionIds.Clear();
     }
 
+    /// <summary>
+    /// Opens an IOKit connection to IOPMrootDomain
+    /// </summary>
     private void EnsureClamshellConnection()
     {
         if (_rootDomainConnection != 0)
@@ -319,6 +475,10 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Enables or disables clamshell sleep via IOKit
+    /// </summary>
+    /// <param name="disable">True to disable clamshell sleep</param>
     private void SetClamshellSleepDisabled(bool disable)
     {
         EnsureClamshellConnection();
@@ -335,6 +495,9 @@ public sealed class MacKeepAwakeService : IDisposable
             throw new InvalidOperationException($"kPMSetClamshellSleepState failed: 0x{kr:X8}");
     }
 
+    /// <summary>
+    /// Closes IOKit clamshell handles
+    /// </summary>
     private void CloseClamshellHandles()
     {
         if (_rootDomainConnection != 0)
@@ -350,6 +513,11 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads a boolean IORegistry property from IOPMrootDomain
+    /// </summary>
+    /// <param name="key">CFString property key</param>
+    /// <returns>Property value, or null when unavailable</returns>
     private static bool? ReadIoregBoolean(IntPtr key)
     {
         if (key == IntPtr.Zero)
@@ -388,8 +556,16 @@ public sealed class MacKeepAwakeService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads the SleepDisabled IORegistry flag
+    /// </summary>
+    /// <returns>True when SleepDisabled is set</returns>
     private static bool ReadSleepDisabledFromIoreg() => ReadIoregBoolean(KeySleepDisabled) == true;
 
+    /// <summary>
+    /// Runs pmset disablesleep through Power Protect
+    /// </summary>
+    /// <param name="disable">True to disable system sleep</param>
     private void SetPmsetDisableSleep(bool disable)
     {
         var value = disable ? "1" : "0";
