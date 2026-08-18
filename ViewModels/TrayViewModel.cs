@@ -1,4 +1,3 @@
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AmphetamineNet.Services;
@@ -22,11 +21,6 @@ public sealed partial class TrayViewModel : ObservableObject
     private readonly MainViewModel _main;
 
     /// <summary>
-    /// Debounce timer for tray menu refresh
-    /// </summary>
-    private readonly DispatcherTimer _debounce;
-
-    /// <summary>
     /// Creates the tray menu view model
     /// </summary>
     /// <param name="app">Application instance</param>
@@ -35,12 +29,6 @@ public sealed partial class TrayViewModel : ObservableObject
     {
         _app = app;
         _main = main;
-        _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-        _debounce.Tick += (_, _) =>
-        {
-            _debounce.Stop();
-            NotifyMenuStateCore();
-        };
 
         _main.PropertyChanged += (_, e) =>
         {
@@ -240,13 +228,9 @@ public sealed partial class TrayViewModel : ObservableObject
     private void Exit() => _app.ExitApplication();
 
     /// <summary>
-    /// Schedules a debounced tray menu refresh
+    /// Requests a tray menu refresh; the tray-side debounce coalesces bursts
     /// </summary>
-    private void ScheduleNotify()
-    {
-        _debounce.Stop();
-        _debounce.Start();
-    }
+    private void ScheduleNotify() => NotifyMenuStateCore();
 
     /// <summary>
     /// Raises property changes used by the tray menu

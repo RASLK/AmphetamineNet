@@ -209,6 +209,17 @@ public static class Localization
             ["tooltip.active"] = "AmphetamineNet — active ({0})",
             ["tooltip.inactive"] = "AmphetamineNet — inactive",
             ["os.unsupported"] = "This app only works on macOS.",
+            ["lid.closed"] = "Lid: closed",
+            ["lid.open"] = "Lid: open",
+            ["lid.na"] = "Lid: n/a",
+            ["detail.assertions"] = "IOPM assertions",
+            ["detail.closed_lid_ok"] = "closed lid OK",
+            ["detail.closed_lid_partial"] = "lid without SleepDisabled",
+            ["detail.display_awake"] = "display awake",
+            ["detail.timer"] = "timer {0}",
+            ["detail.indefinite"] = "indefinite",
+            ["detail.hint"] = "Turn on \"Allow closed lid\" — Power Protect will install itself the first time (one password prompt)",
+            ["detail.settings_saved"] = "Settings saved",
         };
 
         var table = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
@@ -253,6 +264,17 @@ public static class Localization
             ["tooltip.active"] = "AmphetamineNet — активна ({0})",
             ["tooltip.inactive"] = "AmphetamineNet — неактивна",
             ["os.unsupported"] = "Это приложение работает только на macOS.",
+            ["lid.closed"] = "Крышка: закрыта",
+            ["lid.open"] = "Крышка: открыта",
+            ["lid.na"] = "Крышка: н/д",
+            ["detail.assertions"] = "IOPM-ассерции",
+            ["detail.closed_lid_ok"] = "закрытая крышка ОК",
+            ["detail.closed_lid_partial"] = "крышка без SleepDisabled",
+            ["detail.display_awake"] = "экран не гаснет",
+            ["detail.timer"] = "таймер {0}",
+            ["detail.indefinite"] = "бессрочно",
+            ["detail.hint"] = "Включите «Разрешить закрытую крышку» — Power Protect установится при первом запуске (один запрос пароля)",
+            ["detail.settings_saved"] = "Настройки сохранены",
         });
 
         Add("de", new()

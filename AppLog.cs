@@ -7,12 +7,13 @@ namespace AmphetamineNet;
 internal static class AppLog
 {
     private const string Path = "/tmp/amphetamine-net.log";
-    private static readonly ConcurrentQueue<string> Queue = new();
+    private static readonly ConcurrentQueue<(DateTime Timestamp, string Message)> Queue = new();
     private static int _flushScheduled;
 
     public static void Write(string message)
     {
-        Queue.Enqueue($"{DateTime.Now:O} {message}");
+        // Timestamp formatting happens on the flush thread, off the hot path.
+        Queue.Enqueue((DateTime.Now, message));
         ScheduleFlush();
     }
 
@@ -29,8 +30,8 @@ internal static class AppLog
         try
         {
             var sb = new StringBuilder();
-            while (Queue.TryDequeue(out var line))
-                sb.AppendLine(line);
+            while (Queue.TryDequeue(out var entry))
+                sb.Append(entry.Timestamp.ToString("O")).Append(' ').AppendLine(entry.Message);
 
             if (sb.Length > 0)
                 File.AppendAllText(Path, sb.ToString());

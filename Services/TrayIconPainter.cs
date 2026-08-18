@@ -30,19 +30,14 @@ public static class TrayIconPainter
     private static readonly SKColor SunYellow = new(255, 204, 0);
 
     /// <summary>
-    /// Inactive icon background (macOS system gray)
+    /// Timed-session fill (macOS system green)
     /// </summary>
-    private static readonly SKColor BgIdle = new(242, 242, 247);
+    private static readonly SKColor FillTimed = new(52, 199, 89);
 
     /// <summary>
-    /// Timed-session background (macOS system green)
+    /// Indefinite-session fill (coral)
     /// </summary>
-    private static readonly SKColor BgTimed = new(52, 199, 89);
-
-    /// <summary>
-    /// Indefinite-session background (soft coral, macOS-friendly)
-    /// </summary>
-    private static readonly SKColor BgIndefinite = new(232, 117, 117);
+    private static readonly SKColor FillIndefinite = new(255, 105, 97);
 
     /// <summary>
     /// Menu selection indicator color (macOS system green)
@@ -86,7 +81,7 @@ public static class TrayIconPainter
                 Color = SelectionGreen,
                 Style = SKPaintStyle.Fill,
             };
-            canvas.DrawCircle(size / 2f, size / 2f, size * 0.34f, paint);
+            canvas.DrawCircle(size / 2f, size / 2f, size * 0.42f, paint);
         }
 
         using var image = surface.Snapshot();
@@ -111,16 +106,17 @@ public static class TrayIconPainter
         var info = new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
         var bitmap = new SKBitmap(info);
         using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
 
-        var background = !active ? BgIdle : timed ? BgTimed : BgIndefinite;
-        canvas.Clear(background);
+        // One primary channel per state: the pill fill says active/idle at a glance.
+        var topFillColor = !active ? White : timed ? FillTimed : FillIndefinite;
+        var bottomFillColor = closedLid ? Black : topFillColor;
 
-        // Thinner outline; pill nearly fills the tile.
-        var stroke = Math.Max(1.6f, size * 0.038f);
-        var seam = Math.Max(1.8f, size * 0.042f);
+        var stroke = Math.Max(2.0f, size * 0.06f);
+        var seam = Math.Max(2.2f, size * 0.07f);
 
-        var pillW = size * 0.86f;
-        var pillH = size * 0.96f;
+        var pillW = size * 0.72f;
+        var pillH = size - stroke;
         var left = (size - pillW) / 2f;
         var top = (size - pillH) / 2f;
         var right = left + pillW;
@@ -133,51 +129,39 @@ public static class TrayIconPainter
         using var pillPath = new SKPath();
         pillPath.AddRoundRect(rect, radius, radius);
 
-        // Top half is always white.
-        using (var topFill = new SKPaint { IsAntialias = true, Color = White, Style = SKPaintStyle.Fill })
+        using (var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = topFillColor })
         {
             canvas.Save();
             canvas.ClipRect(new SKRect(0, 0, size, midY));
-            canvas.DrawPath(pillPath, topFill);
+            canvas.DrawPath(pillPath, fill);
             canvas.Restore();
         }
 
-        // Bottom half: white by default, black with a closed-lid mark when enabled.
+        using (var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = bottomFillColor })
+        {
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, midY, size, size));
+            canvas.DrawPath(pillPath, fill);
+            canvas.Restore();
+        }
+
         if (closedLid)
         {
-            using (var bottomFill = new SKPaint { IsAntialias = true, Color = Black, Style = SKPaintStyle.Fill })
-            {
-                canvas.Save();
-                canvas.ClipRect(new SKRect(0, midY, size, size));
-                canvas.DrawPath(pillPath, bottomFill);
-                canvas.Restore();
-            }
-
             DrawClosedLidMark(
                 canvas,
                 cx,
                 (midY + bottom) / 2f,
-                pillW * 0.50f,
-                (bottom - midY) * 0.48f,
+                pillW * 0.52f,
+                (bottom - midY) * 0.44f,
                 White,
-                Math.Max(2.8f, size * 0.09f));
-        }
-        else
-        {
-            using var bottomFill = new SKPaint { IsAntialias = true, Color = White, Style = SKPaintStyle.Fill };
-            canvas.Save();
-            canvas.ClipRect(new SKRect(0, midY, size, size));
-            canvas.DrawPath(pillPath, bottomFill);
-            canvas.Restore();
+                Math.Max(3.2f, size * 0.10f));
         }
 
-        // Bright yellow sun in the top half when display-awake is on.
+        // Bold sun in the top half when display-awake is on.
         if (displayAwake)
         {
             var topHalfHeight = midY - top;
-            // Keep the whole sun (core + rays) inside the top chamber.
-            var maxOuter = Math.Min(pillW * 0.42f, topHalfHeight * 0.42f);
-            var sunRadius = maxOuter / 1.95f;
+            var maxOuter = Math.Min(pillW, topHalfHeight) * 0.46f;
             canvas.Save();
             canvas.ClipRect(new SKRect(left, top, right, midY));
             canvas.ClipPath(pillPath, SKClipOperation.Intersect, antialias: true);
@@ -185,14 +169,14 @@ public static class TrayIconPainter
                 canvas,
                 cx,
                 (top + midY) / 2f,
-                sunRadius,
+                maxOuter * 0.55f,
+                maxOuter,
                 SunYellow,
-                Math.Max(2.0f, size * 0.055f),
-                Math.Max(1.2f, size * 0.028f));
+                Math.Max(2.6f, size * 0.075f),
+                Math.Max(1.4f, size * 0.03f));
             canvas.Restore();
         }
 
-        // Black outline.
         using (var outline = new SKPaint
         {
             IsAntialias = true,
@@ -205,16 +189,17 @@ public static class TrayIconPainter
             canvas.DrawPath(pillPath, outline);
         }
 
-        // Black seam across the middle.
-        using (var seamPaint = new SKPaint
+        // Seam across the middle; skipped when the bottom half is already black.
+        if (!closedLid)
         {
-            IsAntialias = true,
-            Color = Black,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = seam,
-            StrokeCap = SKStrokeCap.Butt,
-        })
-        {
+            using var seamPaint = new SKPaint
+            {
+                IsAntialias = true,
+                Color = Black,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = seam,
+                StrokeCap = SKStrokeCap.Butt,
+            };
             var inset = stroke * 0.4f;
             canvas.DrawLine(left + inset, midY, right - inset, midY, seamPaint);
         }
@@ -260,20 +245,19 @@ public static class TrayIconPainter
         // Two parallel horizontals joined only on the right (closed Mac lid silhouette).
         path.MoveTo(left, top);
         path.LineTo(right, top);
-        path.MoveTo(right, top);
         path.LineTo(right, bottom);
-        path.MoveTo(right, bottom);
         path.LineTo(left, bottom);
         canvas.DrawPath(path, paint);
     }
 
     /// <summary>
-    /// Draws a bright sun glyph in the upper pill half
+    /// Draws a bold sun glyph in the upper pill half
     /// </summary>
     /// <param name="canvas">Target canvas</param>
     /// <param name="cx">Center X</param>
     /// <param name="cy">Center Y</param>
     /// <param name="radius">Sun core radius</param>
+    /// <param name="outer">Outer ray radius</param>
     /// <param name="color">Sun color</param>
     /// <param name="rayStroke">Ray stroke width</param>
     /// <param name="outlineStroke">Black outline width</param>
@@ -282,12 +266,12 @@ public static class TrayIconPainter
         float cx,
         float cy,
         float radius,
+        float outer,
         SKColor color,
         float rayStroke,
         float outlineStroke)
     {
-        var inner = radius * 1.22f;
-        var outer = radius * 1.90f;
+        var inner = radius * 1.25f;
 
         using var rayFill = new SKPaint
         {
@@ -306,9 +290,10 @@ public static class TrayIconPainter
             StrokeCap = SKStrokeCap.Round,
         };
 
-        for (var i = 0; i < 8; i++)
+        // Four thick diagonal rays stay legible where eight thin ones blur together.
+        for (var i = 0; i < 4; i++)
         {
-            var angle = i * (MathF.PI / 4f);
+            var angle = MathF.PI / 4f + i * (MathF.PI / 2f);
             var dx = MathF.Cos(angle);
             var dy = MathF.Sin(angle);
             var x0 = cx + dx * inner;

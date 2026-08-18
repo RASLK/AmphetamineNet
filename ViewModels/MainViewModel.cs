@@ -420,7 +420,7 @@ public sealed partial class MainViewModel : ViewModelBase, IDisposable
     private void SaveSettings()
     {
         PersistSettings();
-        SetDetail("Settings saved");
+        SetDetail(Localization.T("detail.settings_saved"));
     }
 
     /// <summary>
@@ -518,25 +518,24 @@ public sealed partial class MainViewModel : ViewModelBase, IDisposable
         string detail;
         if (active)
         {
-            var parts = new List<string>(4) { "IOPM assertions" };
+            var parts = new List<string>(4) { Localization.T("detail.assertions") };
             if (AllowClosedLid)
             {
                 parts.Add(_keepAwake.IsPowerProtectActive
-                    ? "closed lid OK"
-                    : "lid without SleepDisabled");
+                    ? Localization.T("detail.closed_lid_ok")
+                    : Localization.T("detail.closed_lid_partial"));
             }
 
             if (PreventDisplaySleep)
-                parts.Add("display awake");
+                parts.Add(Localization.T("detail.display_awake"));
             parts.Add(SelectedDurationMinutes > 0
-                ? $"timer {SelectedDuration.Title}"
-                : "indefinite");
+                ? string.Format(Localization.T("detail.timer"), SelectedDuration.Title)
+                : Localization.T("detail.indefinite"));
             detail = string.Join(" · ", parts);
         }
         else if (string.IsNullOrEmpty(_keepAwake.LastWarning))
         {
-            detail =
-                "Turn on \"Allow closed lid\" — Power Protect will install itself the first time (one password prompt)";
+            detail = Localization.T("detail.hint");
         }
         else
         {
@@ -610,9 +609,9 @@ public sealed partial class MainViewModel : ViewModelBase, IDisposable
     /// <returns>Lid status label</returns>
     private static string FormatLid(bool? lid) => lid switch
     {
-        true => "Lid: closed",
-        false => "Lid: open",
-        null => "Lid: n/a",
+        true => Localization.T("lid.closed"),
+        false => Localization.T("lid.open"),
+        null => Localization.T("lid.na"),
     };
 
     /// <summary>

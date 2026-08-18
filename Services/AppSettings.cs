@@ -96,11 +96,18 @@ public sealed class AppSettings
     /// </summary>
     public void Save()
     {
-        var path = SettingsPath;
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
+        try
+        {
+            var path = SettingsPath;
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
 
-        File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
+            File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"settings save error: {ex.Message}");
+        }
     }
 }

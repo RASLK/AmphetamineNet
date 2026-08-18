@@ -103,6 +103,11 @@ public partial class App : Application
     private string _lastIconKey = "";
 
     /// <summary>
+    /// Last applied selection state per menu item, to skip redundant icon rebuilds
+    /// </summary>
+    private readonly Dictionary<NativeMenuItem, bool> _selectionStates = new();
+
+    /// <summary>
     /// Loads Avalonia XAML resources
     /// </summary>
     public override void Initialize()
@@ -268,6 +273,15 @@ public partial class App : Application
         menu.Items.Add(_statusItem);
         menu.Items.Add(new NativeMenuItemSeparator());
 
+        // Primary action first, per macOS menu-bar conventions.
+        _toggleItem = new NativeMenuItem(trayVm.ToggleSessionHeader)
+        {
+            Command = trayVm.ToggleSessionCommand,
+        };
+        menu.Items.Add(_toggleItem);
+
+        menu.Items.Add(new NativeMenuItemSeparator());
+
         _timerRoot = new NativeMenuItem(Localization.T("menu.timer"))
         {
             Menu = new NativeMenu(),
@@ -279,6 +293,8 @@ public partial class App : Application
             Menu = new NativeMenu(),
         };
         menu.Items.Add(_modifiersRoot);
+
+        menu.Items.Add(new NativeMenuItemSeparator());
 
         _languageRoot = new NativeMenuItem(Localization.T("menu.language"))
         {
@@ -293,12 +309,6 @@ public partial class App : Application
             Command = trayVm.ExitCommand,
         };
         menu.Items.Add(_quitItem);
-
-        _toggleItem = new NativeMenuItem(trayVm.ToggleSessionHeader)
-        {
-            Command = trayVm.ToggleSessionCommand,
-        };
-        menu.Items.Add(_toggleItem);
 
         _trayIcon.Menu = menu;
         RelocalizeTrayMenu(trayVm);
@@ -331,6 +341,8 @@ public partial class App : Application
     private void FillTimerMenu(NativeMenu submenu, TrayViewModel trayVm)
     {
         submenu.Items.Clear();
+        foreach (var stale in _durationItems.Values)
+            _selectionStates.Remove(stale);
         _durationItems.Clear();
 
         foreach (var minutes in MainViewModel.PresetDurations)
@@ -363,16 +375,16 @@ public partial class App : Application
 
         _closedLidItem = new NativeMenuItem(Localization.T("mod.closed_lid"))
         {
-            Icon = SelectionIcon(trayVm.AllowClosedLid),
             Command = trayVm.ToggleClosedLidCommand,
         };
+        SetSelectionIcon(_closedLidItem, trayVm.AllowClosedLid);
         submenu.Items.Add(_closedLidItem);
 
         _displayItem = new NativeMenuItem(Localization.T("mod.display"))
         {
-            Icon = SelectionIcon(trayVm.PreventDisplaySleep),
             Command = trayVm.ToggleDisplaySleepCommand,
         };
+        SetSelectionIcon(_displayItem, trayVm.PreventDisplaySleep);
         submenu.Items.Add(_displayItem);
     }
 
@@ -384,6 +396,8 @@ public partial class App : Application
     private void FillLanguageMenu(NativeMenu submenu, TrayViewModel trayVm)
     {
         submenu.Items.Clear();
+        foreach (var stale in _languageItems.Values)
+            _selectionStates.Remove(stale);
         _languageItems.Clear();
 
         var current = Localization.CurrentLanguage;
@@ -392,10 +406,10 @@ public partial class App : Application
             var selected = current.Equals(lang.Code, StringComparison.OrdinalIgnoreCase);
             var item = new NativeMenuItem(lang.NativeName)
             {
-                Icon = SelectionIcon(selected),
                 Command = trayVm.SelectLanguageCommand,
                 CommandParameter = lang.Code,
             };
+            SetSelectionIcon(item, selected);
             _languageItems[lang.Code] = item;
             submenu.Items.Add(item);
         }
@@ -429,24 +443,24 @@ public partial class App : Application
         foreach (var (minutes, item) in _durationItems)
         {
             item.Header = Localization.FormatDuration(minutes);
-            item.Icon = SelectionIcon(trayVm.IsDurationSelected(minutes));
+            SetSelectionIcon(item, trayVm.IsDurationSelected(minutes));
         }
 
         if (_closedLidItem is not null)
         {
             _closedLidItem.Header = Localization.T("mod.closed_lid");
-            _closedLidItem.Icon = SelectionIcon(trayVm.AllowClosedLid);
+            SetSelectionIcon(_closedLidItem, trayVm.AllowClosedLid);
         }
 
         if (_displayItem is not null)
         {
             _displayItem.Header = Localization.T("mod.display");
-            _displayItem.Icon = SelectionIcon(trayVm.PreventDisplaySleep);
+            SetSelectionIcon(_displayItem, trayVm.PreventDisplaySleep);
         }
 
         var currentLanguage = Localization.CurrentLanguage;
         foreach (var (code, item) in _languageItems)
-            item.Icon = SelectionIcon(currentLanguage.Equals(code, StringComparison.OrdinalIgnoreCase));
+            SetSelectionIcon(item, currentLanguage.Equals(code, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -479,22 +493,28 @@ public partial class App : Application
     {
         var item = new NativeMenuItem(Localization.FormatDuration(minutes))
         {
-            Icon = SelectionIcon(trayVm.IsDurationSelected(minutes)),
             Command = trayVm.SelectDurationCommand,
             CommandParameter = minutes.ToString(),
         };
+        SetSelectionIcon(item, trayVm.IsDurationSelected(minutes));
         _durationItems[minutes] = item;
         menu.Items.Add(item);
     }
 
     /// <summary>
-    /// Returns the selection indicator for a menu item
+    /// Applies the selection indicator to a menu item, skipping unchanged states
     /// </summary>
+    /// <param name="item">Target menu item</param>
     /// <param name="selected">Whether the item is selected</param>
-    /// <returns>Selection bitmap, or null</returns>
-    private Bitmap? SelectionIcon(bool selected) =>
+    private void SetSelectionIcon(NativeMenuItem item, bool selected)
+    {
+        if (_selectionStates.TryGetValue(item, out var last) && last == selected && item.Icon is not null)
+            return;
+
+        _selectionStates[item] = selected;
         // Fresh instances avoid macOS native-menu icon sharing glitches.
-        TrayIconPainter.CreateSelectionDot(selected);
+        item.Icon = TrayIconPainter.CreateSelectionDot(selected);
+    }
 
     /// <summary>
     /// Rebuilds the tray icon when session state changes
